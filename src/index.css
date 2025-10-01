@@ -1,5 +1,16 @@
 @import 'tailwindcss';
 
+/* Configuration Tailwind - Couleurs personnalisées */
+@theme {
+  --color-primary: #3b82f6;
+  --color-secondary: #64748b;
+  --color-success: #10b981;
+  --color-warning: #f59e0b;
+  --color-error: #ef4444;
+  --color-background: #f8fafc;
+  --color-surface: #ffffff;
+}
+
 /* Déclaration des polices personnalisées */
 @font-face {
   font-family: 'Afacad';
