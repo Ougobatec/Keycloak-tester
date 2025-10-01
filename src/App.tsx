@@ -1,64 +1,14 @@
-import { useState } from 'react';
-
-// Données d'exemple pour l'interface utilisateur
-interface MockConfig {
-  url: string;
-  realm: string;
-  clientId: string;
-}
-
-interface ParsedToken {
-  exp: number;
-  iat: number;
-  iss: string;
-  sub: string;
-  email?: string;
-  name?: string;
-  preferred_username?: string;
-  family_name?: string;
-  given_name?: string;
-  realm_access?: {
-    roles: string[];
-  };
-  [key: string]: unknown;
-}
-
-interface TokenInfo {
-  accessToken: string;
-  refreshToken: string;
-  idToken: string;
-  tokenParsed: ParsedToken;
-  idTokenParsed: ParsedToken;
-}
-
-// Données mockées
-const MOCK_PARSED_TOKEN: ParsedToken = {
-  exp: Math.floor(Date.now() / 1000) + 3600, // Expire dans 1 heure
-  iat: Math.floor(Date.now() / 1000),
-  iss: 'https://auth.example.com/realms/master',
-  sub: '123e4567-e89b-12d3-a456-426614174000',
-  email: 'jean.dupont@example.com',
-  name: 'Jean Dupont',
-  preferred_username: 'jdupont',
-  realm_access: {
-    roles: ['user', 'admin', 'viewer']
-  }
-};
-
-const MOCK_TOKENS: TokenInfo = {
-  accessToken: 'eyJhbGciOiJSUzI1NiIsInR5cCIgOiAiSldUIiwia2lkIiA6ICJrYkY3OE9jVFhEWnVpM0VUQkNXRVJvYV9XdU5YZDBvRGdGQ3d5T0JJMmJ3In0.eyJleHAiOjE3Mjc4MTM5MDAsImlhdCI6MTcyNzgxMzYwMCwianRpIjoiMGM3ZmQ1MTUtNzBiOC00MTc2LWE5ZWMtNzY1YjY4ZmVlOWVmIiwiaXNzIjoiaHR0cHM6Ly9hdXRoLmV4YW1wbGUuY29tL3JlYWxtcy9tYXN0ZXIiLCJhdWQiOiJhY2NvdW50Iiwic3ViIjoiMTIzZTQ1NjctZTg5Yi0xMmQzLWE0NTYtNDI2NjE0MTc0MDAwIiwidHlwIjoiQmVhcmVyIiwiYXpwIjoibXktY2xpZW50In0.example_signature_here',
-  refreshToken: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3Mjc4OTk5MDAsImlhdCI6MTcyNzgxMzYwMCwianRpIjoicmVmcmVzaC10b2tlbi1pZCIsInR5cCI6IlJlZnJlc2gifQ.refresh_signature_here',
-  idToken: 'eyJhbGciOiJSUzI1NiIsInR5cCIgOiAiSldUIiwia2lkIiA6ICJrYkY3OE9jVFhEWnVpM0VUQkNXRVJvYV9XdU5YZDBvRGdGQ3d5T0JJMmJ3In0.eyJleHAiOjE3Mjc4MTM5MDAsImlhdCI6MTcyNzgxMzYwMCwianRpIjoiaWQtdG9rZW4taWQiLCJpc3MiOiJodHRwczovL2F1dGguZXhhbXBsZS5jb20vcmVhbG1zL21hc3RlciIsImF1ZCI6Im15LWNsaWVudCIsInN1YiI6IjEyM2U0NTY3LWU4OWItMTJkMy1hNDU2LTQyNjYxNDE3NDAwMCIsInR5cCI6IklEIiwiZW1haWwiOiJqZWFuLmR1cG9udEBleGFtcGxlLmNvbSIsIm5hbWUiOiJKZWFuIER1cG9udCIsInByZWZlcnJlZF91c2VybmFtZSI6ImpkdXBvbnQifQ.id_signature_here',
-  tokenParsed: MOCK_PARSED_TOKEN,
-  idTokenParsed: MOCK_PARSED_TOKEN
-};
-
-// Configuration par défaut
-const DEFAULT_CONFIG: MockConfig = {
-  url: '',
-  realm: '',
-  clientId: ''
-};
+import { useState, useEffect } from 'react';
+import type { MockConfig, TokenInfo } from './types';
+import { getInitialConfig, DEFAULT_CONFIG } from './data/mockData';
+import { 
+  copyToClipboard, 
+  formatTokenExpiration, 
+  simulateConnection, 
+  simulateTokenRefresh,
+  saveConfigToStorage,
+  clearConfigFromStorage
+} from './utils';
 
 function App() {
   const [config, setConfig] = useState<MockConfig>(DEFAULT_CONFIG);
@@ -67,10 +17,35 @@ function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [disableSilentSSO, setDisableSilentSSO] = useState(false);
-  const [isInitialized] = useState(true);
+  const [currentTime, setCurrentTime] = useState(Date.now());
+
+  // Charger la configuration sauvegardée au démarrage
+  useEffect(() => {
+    const savedConfig = getInitialConfig();
+    setConfig(savedConfig);
+  }, []);
+
+  // Sauvegarder automatiquement la configuration quand elle change
+  useEffect(() => {
+    if (config.url || config.realm || config.clientId) {
+      saveConfigToStorage(config);
+    }
+  }, [config]);
+
+  // Timer pour mettre à jour les compteurs d'expiration toutes les secondes
+  useEffect(() => {
+    if (tokens) {
+      const interval = setInterval(() => {
+        setCurrentTime(Date.now());
+      }, 1000);
+
+      return () => clearInterval(interval);
+    }
+  }, [tokens]);
 
   const clearSavedConfig = () => {
     setConfig(DEFAULT_CONFIG);
+    clearConfigFromStorage();
     setDisableSilentSSO(false);
   };
 
@@ -78,19 +53,15 @@ function App() {
     setIsLoading(true);
     setError(null);
     
-    // Validation des champs
-    if (!config.url || !config.realm || !config.clientId) {
-      setError('Tous les champs sont requis');
-      setIsLoading(false);
-      return;
-    }
-    
-    // Simulation d'une connexion
-    setTimeout(() => {
-      setTokens(MOCK_TOKENS);
+    try {
+      const tokenData = await simulateConnection(config);
+      setTokens(tokenData);
       setIsConnected(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erreur lors de la connexion');
+    } finally {
       setIsLoading(false);
-    }, 1000);
+    }
   };
 
   const handleDisconnect = () => {
@@ -99,67 +70,34 @@ function App() {
     setError(null);
   };
 
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
-  };
-
   const handleRefreshToken = () => {
-    // Simulation du rafraîchissement
     if (tokens) {
-      const newTokens = { ...tokens };
-      newTokens.tokenParsed.exp = Math.floor(Date.now() / 1000) + 3600; // Nouveau délai d'expiration
-      setTokens(newTokens);
+      const refreshedTokens = simulateTokenRefresh(tokens);
+      setTokens(refreshedTokens);
     }
   };
-
-  const formatTokenExpiration = (exp: number): string => {
-    const expirationDate = new Date(exp * 1000);
-    const now = new Date();
-    const diffMs = expirationDate.getTime() - now.getTime();
-    
-    if (diffMs <= 0) {
-      return 'Expiré';
-    }
-    
-    const diffMins = Math.floor(diffMs / (1000 * 60));
-    const diffHours = Math.floor(diffMins / 60);
-    const diffDays = Math.floor(diffHours / 24);
-    
-    if (diffDays > 0) {
-      return `Expire dans ${diffDays} jour(s)`;
-    } else if (diffHours > 0) {
-      return `Expire dans ${diffHours} heure(s)`;
-    } else {
-      return `Expire dans ${diffMins} minute(s)`;
-    }
-  };
-
-  // Affichage de chargement initial
-  if (!isInitialized) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <svg className="animate-spin w-8 h-8 text-blue-600 mx-auto mb-4" fill="none" viewBox="0 0 24 24">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-            <path className="opacity-75" fill="currentColor" d="m4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
-          </svg>
-          <p className="text-gray-600">Initialisation...</p>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-gray-50 p-4">
       <div className="max-w-6xl mx-auto">
         {/* Header */}
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Keycloak Tester</h1>
+          <div className="flex items-center justify-center gap-1 mb-2">
+            <svg className="w-12 h-12 text-primary" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M12 16.1667C12.4603 16.1667 12.8334 15.7936 12.8334 15.3333C12.8334 14.8731 12.4603 14.5 12 14.5C11.5398 14.5 11.1667 14.8731 11.1667 15.3333C11.1667 15.7936 11.5398 16.1667 12 16.1667Z" fill="currentColor" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              <path d="M17.8333 10.3333H6.16667C5.24619 10.3333 4.5 11.0795 4.5 12V18.6666C4.5 19.5871 5.24619 20.3333 6.16667 20.3333H17.8333C18.7538 20.3333 19.5 19.5871 19.5 18.6666V12C19.5 11.0795 18.7538 10.3333 17.8333 10.3333Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              <path d="M7.83331 10.3334V7.83335C7.83331 6.72828 8.2723 5.66848 9.0537 4.88708C9.8351 4.10567 10.8949 3.66669 12 3.66669C13.105 3.66669 14.1649 4.10567 14.9463 4.88708C15.7277 5.66848 16.1666 6.72828 16.1666 7.83335V10.3334" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+            <div className="text-left">
+              <div className="text-2xl font-bold text-primary">Keycloak</div>
+              <div className="text-lg text-primary -mt-2">tester</div>
+            </div>
+          </div>
           <p className="text-gray-600">Testez votre configuration Keycloak et explorez vos tokens</p>
         </div>
 
         {/* Configuration Card */}
-        <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+        <div className="bg-white rounded-lg border border-gray-200 p-6 mb-6">
           <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
             <svg className="w-5 h-5 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
               <path fillRule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clipRule="evenodd" />
@@ -237,34 +175,34 @@ function App() {
             {!isConnected ? (
               <>
                 <button
-                onClick={handleConnect}
-                disabled={isLoading || !config.url || !config.realm || !config.clientId}
-                className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-              >
-                {isLoading ? (
-                  <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                    <path className="opacity-75" fill="currentColor" d="m4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
-                  </svg>
-                ) : (
+                  onClick={handleConnect}
+                  disabled={isLoading || !config.url || !config.realm || !config.clientId}
+                  className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                >
+                  {isLoading ? (
+                    <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                      <path className="opacity-75" fill="currentColor" d="m4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
+                    </svg>
+                  ) : (
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
+                    </svg>
+                  )}
+                  {isLoading ? 'Connexion...' : 'Se connecter'}
+                </button>
+                
+                <button
+                  onClick={clearSavedConfig}
+                  disabled={isLoading}
+                  className="px-4 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                  title="Effacer la configuration sauvegardée"
+                >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                   </svg>
-                )}
-                {isLoading ? 'Connexion...' : 'Se connecter'}
-              </button>
-              
-              <button
-                onClick={clearSavedConfig}
-                disabled={isLoading}
-                className="px-4 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                title="Effacer la configuration sauvegardée"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                </svg>
-                Effacer
-              </button>
+                  Effacer
+                </button>
               </>
             ) : (
               <button
@@ -304,7 +242,7 @@ function App() {
         {tokens && (
           <div className="space-y-6">
             {/* User Info */}
-            <div className="bg-white rounded-lg shadow-md p-6">
+            <div className="bg-white rounded-lg border border-gray-200 p-6">
               <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
                 <svg className="w-5 h-5 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
                   <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
@@ -344,7 +282,7 @@ function App() {
 
             {/* Tokens */}
             {['accessToken', 'refreshToken', 'idToken'].map((tokenType) => (
-              <div key={tokenType} className="bg-white rounded-lg shadow-md p-6">
+              <div key={tokenType} className="bg-white rounded-lg border border-gray-200 p-6">
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-lg font-semibold flex items-center gap-2">
                     <svg className="w-4 h-4 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
