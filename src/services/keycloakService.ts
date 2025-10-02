@@ -65,15 +65,30 @@ class KeycloakService {
   }
 
   // Rafraîchir le token
-  async refreshToken(): Promise<boolean> {
+  async refreshToken(): Promise<{ refreshed: boolean; message: string }> {
     if (!this.keycloak) {
       throw new Error('Keycloak non initialisé');
     }
     
+    if (!this.keycloak.authenticated) {
+      throw new Error('Utilisateur non authentifié');
+    }
+
     try {
-      return await this.keycloak.updateToken(30);
+      console.log('Tentative de rafraîchissement du token...');
+      // updateToken retourne true si le token a été rafraîchi, false s'il est encore valide
+      const refreshed = await this.keycloak.updateToken(5); // Forcer le rafraîchissement même si valide encore 5 secondes
+      
+      if (refreshed) {
+        console.log('Token rafraîchi avec succès');
+        return { refreshed: true, message: 'Tokens rafraîchis avec succès' };
+      } else {
+        console.log('Tokens encore valides, aucun rafraîchissement nécessaire');
+        return { refreshed: false, message: 'Tokens encore valides, aucun rafraîchissement nécessaire' };
+      }
     } catch (error) {
-      throw new Error('Erreur lors du rafraîchissement du token');
+      console.error('Erreur updateToken:', error);
+      throw new Error(`Erreur lors du rafraîchissement du token: ${error}`);
     }
   }
 

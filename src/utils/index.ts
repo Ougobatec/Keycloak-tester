@@ -64,9 +64,9 @@ export const copyToClipboard = (text: string): void => {
 };
 
 // Fonction pour formater le temps restant avant expiration du token
-export const formatTokenExpiration = (exp: number): string => {
+export const formatTokenExpiration = (exp: number, currentTime?: number): string => {
   const expirationDate = new Date(exp * 1000);
-  const now = new Date();
+  const now = currentTime ? new Date(currentTime) : new Date();
   const diffMs = expirationDate.getTime() - now.getTime();
   
   if (diffMs <= 0) {
@@ -176,20 +176,18 @@ export const disconnectFromKeycloak = async (): Promise<void> => {
 };
 
 // Fonction pour rafraîchir le token
-export const refreshKeycloakToken = async (): Promise<TokenInfo> => {
+export const refreshKeycloakToken = async (): Promise<{ tokenInfo: TokenInfo; message: string }> => {
   try {
-    const refreshed = await keycloakService.refreshToken();
-    if (!refreshed) {
-      throw new Error('Impossible de rafraîchir le token');
-    }
+    const result = await keycloakService.refreshToken();
     
     const tokenInfo = keycloakService.getTokenInfo();
     if (!tokenInfo) {
       throw new Error('Impossible de récupérer les tokens après rafraîchissement');
     }
     
-    return tokenInfo;
+    return { tokenInfo, message: result.message };
   } catch (error) {
-    throw new Error(`Erreur lors du rafraîchissement: ${error}`);
+    console.error('Erreur détaillée rafraîchissement:', error);
+    throw new Error(`Erreur lors du rafraîchissement: ${error instanceof Error ? error.message : error}`);
   }
 };

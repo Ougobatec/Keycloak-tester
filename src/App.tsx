@@ -19,6 +19,7 @@ function App() {
   const [isConnected, setIsConnected] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [disableSilentSSO, setDisableSilentSSO] = useState(false);
   const [currentTime, setCurrentTime] = useState(Date.now());
 
@@ -111,10 +112,18 @@ function App() {
   const handleRefreshToken = async () => {
     if (tokens) {
       try {
-        const refreshedTokens = await refreshKeycloakToken();
-        setTokens(refreshedTokens);
+        const result = await refreshKeycloakToken();
+        setTokens(result.tokenInfo);
+        setError(null); // Effacer les erreurs précédentes
+        setSuccessMessage(result.message); // Afficher le message de succès
+        
+        // Effacer le message de succès après 3 secondes
+        setTimeout(() => setSuccessMessage(null), 3000);
+        
+        console.log(result.message);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Erreur lors du rafraîchissement');
+        setSuccessMessage(null);
       }
     }
   };
@@ -194,6 +203,12 @@ function App() {
           {error && (
             <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md">
               <p className="text-red-800 text-sm">{error}</p>
+            </div>
+          )}
+
+          {successMessage && (
+            <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-md">
+              <p className="text-green-800 text-sm">{successMessage}</p>
             </div>
           )}
 
@@ -336,7 +351,7 @@ function App() {
                   <div className="flex items-center gap-2">
                     {(tokenType === 'accessToken' || tokenType === 'idToken') && tokens.tokenParsed.exp && (
                       <span className="text-xs text-gray-600 bg-gray-100 px-2 py-1 rounded">
-                        {formatTokenExpiration(tokens.tokenParsed.exp)}
+                        {formatTokenExpiration(tokens.tokenParsed.exp, currentTime)}
                       </span>
                     )}
                     <button
