@@ -21,15 +21,21 @@ class KeycloakService {
       };
 
       if (disableSilentSSO) {
-        // Pas de SSO silencieux - connexion explicite uniquement
-        initOptions.onLoad = 'login-required';
+        // Pas de SSO silencieux - vérifier d'abord sans redirection
+        initOptions.onLoad = 'check-sso';
       } else {
         // SSO silencieux activé
         initOptions.onLoad = 'check-sso';
         initOptions.silentCheckSsoRedirectUri = window.location.origin + '/silent-check-sso.html';
       }
 
-      await this.keycloak.init(initOptions);
+      const authenticated = await this.keycloak.init(initOptions);
+      
+      // Si pas authentifié et qu'on a des paramètres de retour de connexion dans l'URL
+      if (!authenticated && (window.location.search.includes('state=') || window.location.hash.includes('state='))) {
+        // Il y a eu une tentative de connexion, nettoyer l'URL
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
     } catch (error) {
       console.error('Erreur Keycloak:', error);
       throw new Error(`Erreur d'initialisation Keycloak: ${error}`);

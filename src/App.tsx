@@ -6,6 +6,7 @@ import {
   connectToKeycloak, 
   disconnectFromKeycloak,
   refreshKeycloakToken,
+  checkExistingAuth,
   getInitialConfig,
   saveConfigToStorage,
   clearConfigFromStorage,
@@ -27,6 +28,29 @@ function App() {
     setConfig(savedConfig);
     setDisableSilentSSO(savedConfig.disableSilentSSO || false);
   }, []);
+
+  // Vérifier si l'utilisateur est déjà connecté après chargement de la config
+  useEffect(() => {
+    const checkAuth = async () => {
+      if (config.url && config.realm && config.clientId) {
+        try {
+          const existingTokens = await checkExistingAuth(config, disableSilentSSO);
+          if (existingTokens) {
+            setTokens(existingTokens);
+            setIsConnected(true);
+            // Nettoyer l'URL si nécessaire
+            if (window.location.search.includes('state=') || window.location.hash.includes('state=')) {
+              window.history.replaceState({}, document.title, window.location.pathname);
+            }
+          }
+        } catch (error) {
+          console.warn('Erreur lors de la vérification automatique:', error);
+        }
+      }
+    };
+
+    checkAuth();
+  }, [config, disableSilentSSO]);
 
   // Sauvegarder automatiquement la configuration quand elle change
   useEffect(() => {
