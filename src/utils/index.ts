@@ -1,11 +1,34 @@
-import type { TokenInfo, MockConfig } from '../types';
-import { MOCK_TOKENS } from '../data/mockData';
+import type { TokenInfo, KeycloakConfig } from '../types';
+import { keycloakService } from '../services/keycloakService';
 
 // Clé pour le localStorage
 const CONFIG_STORAGE_KEY = 'keycloak-tester-config';
 
-// Fonctions de sauvegarde et récupération
-export const saveConfigToStorage = (config: MockConfig): void => {
+// Configuration par défaut
+export const DEFAULT_CONFIG: KeycloakConfig = {
+  url: '',
+  realm: '',
+  clientId: '',
+  disableSilentSSO: false
+};
+
+// Fonction pour obtenir la configuration initiale (depuis le storage ou défaut)
+export const getInitialConfig = (): KeycloakConfig => {
+  if (typeof window !== 'undefined') {
+    try {
+      const saved = localStorage.getItem(CONFIG_STORAGE_KEY);
+      if (saved) {
+        return { ...DEFAULT_CONFIG, ...JSON.parse(saved) };
+      }
+    } catch (error) {
+      console.warn('Impossible de charger la configuration sauvegardée:', error);
+    }
+  }
+  return DEFAULT_CONFIG;
+};
+
+// Fonction pour sauvegarder la configuration dans le stockage
+export const saveConfigToStorage = (config: KeycloakConfig): void => {
   try {
     localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(config));
   } catch (error) {
@@ -13,7 +36,8 @@ export const saveConfigToStorage = (config: MockConfig): void => {
   }
 };
 
-export const loadConfigFromStorage = (): MockConfig | null => {
+// Fonction pour charger la configuration depuis le stockage
+export const loadConfigFromStorage = (): KeycloakConfig | null => {
   try {
     const saved = localStorage.getItem(CONFIG_STORAGE_KEY);
     if (saved) {
@@ -25,6 +49,7 @@ export const loadConfigFromStorage = (): MockConfig | null => {
   return null;
 };
 
+// Fonction pour effacer la configuration du stockage
 export const clearConfigFromStorage = (): void => {
   try {
     localStorage.removeItem(CONFIG_STORAGE_KEY);
@@ -33,11 +58,12 @@ export const clearConfigFromStorage = (): void => {
   }
 };
 
-// Fonctions utilitaires
+// Fonction pour copier du texte dans le presse-papiers
 export const copyToClipboard = (text: string): void => {
   navigator.clipboard.writeText(text);
 };
 
+// Fonction pour formater le temps restant avant expiration du token
 export const formatTokenExpiration = (exp: number): string => {
   const expirationDate = new Date(exp * 1000);
   const now = new Date();
@@ -68,8 +94,8 @@ export const formatTokenExpiration = (exp: number): string => {
   }
 };
 
-// Validation de configuration
-export const validateConfig = (config: MockConfig): string[] => {
+// Fonction pour valider la configuration
+export const validateConfig = (config: KeycloakConfig): string[] => {
   const errors: string[] = [];
   
   if (!config.url) {
@@ -85,30 +111,59 @@ export const validateConfig = (config: MockConfig): string[] => {
   return errors;
 };
 
-// Simulation de connexion avec sauvegarde automatique
-export const simulateConnection = (config: MockConfig): Promise<TokenInfo> => {
-  return new Promise((resolve, reject) => {
-    const errors = validateConfig(config);
+// Fonction pour se connecter à Keycloak
+export const connectToKeycloak = async (config: KeycloakConfig, disableSilentSSO: boolean = false): Promise<TokenInfo> => {
+  const errors = validateConfig(config);
+  
+  if (errors.length > 0) {
+    throw new Error(errors.join(', '));
+  }
+
+  try {
+    await keycloakService.initKeycloak(config, disableSilentSSO);
     
-    if (errors.length > 0) {
-      reject(new Error(errors.join(', ')));
-      return;
+    if (!keycloakService.isAuthenticated()) {
+      await keycloakService.login();
+      return Promise.reject(new Error('Redirection vers la connexion'));
     }
-    
-    // Sauvegarder la configuration si la connexion réussit
     saveConfigToStorage(config);
     
-    // Simulation d'un délai de connexion
-    setTimeout(() => {
-      resolve(MOCK_TOKENS);
-    }, 1000);
-  });
+    const tokenInfo = keycloakService.getTokenInfo();
+    if (!tokenInfo) {
+      throw new Error('Impossible de récupérer les tokens');
+    }
+    return tokenInfo;
+  } catch (error) {
+    throw new Error(`Erreur de connexion Keycloak: ${error}`);
+  }
 };
 
-// Simulation de rafraîchissement de token
-export const simulateTokenRefresh = (currentTokens: TokenInfo): TokenInfo => {
-  const newTokens = { ...currentTokens };
-  newTokens.tokenParsed.exp = Math.floor(Date.now() / 1000) + 3600; // Nouveau délai d'expiration
-  newTokens.idTokenParsed.exp = Math.floor(Date.now() / 1000) + 3600;
-  return newTokens;
+// Fonction pour se déconnecter de Keycloak
+export const disconnectFromKeycloak = async (): Promise<void> => {
+  try {
+    await keycloakService.logout();
+  } catch (error) {
+    console.warn('Erreur lors de la déconnexion:', error);
+  } finally {
+    keycloakService.clearKeycloak();
+  }
+};
+
+// Fonction pour rafraîchir le token
+export const refreshKeycloakToken = async (): Promise<TokenInfo> => {
+  try {
+    const refreshed = await keycloakService.refreshToken();
+    if (!refreshed) {
+      throw new Error('Impossible de rafraîchir le token');
+    }
+    
+    const tokenInfo = keycloakService.getTokenInfo();
+    if (!tokenInfo) {
+      throw new Error('Impossible de récupérer les tokens après rafraîchissement');
+    }
+    
+    return tokenInfo;
+  } catch (error) {
+    throw new Error(`Erreur lors du rafraîchissement: ${error}`);
+  }
 };

@@ -1,17 +1,19 @@
 import { useState, useEffect } from 'react';
-import type { MockConfig, TokenInfo } from './types';
-import { getInitialConfig, DEFAULT_CONFIG } from './data/mockData';
+import type { KeycloakConfig, TokenInfo } from './types';
 import { 
   copyToClipboard, 
   formatTokenExpiration, 
-  simulateConnection, 
-  simulateTokenRefresh,
+  connectToKeycloak, 
+  disconnectFromKeycloak,
+  refreshKeycloakToken,
+  getInitialConfig,
   saveConfigToStorage,
-  clearConfigFromStorage
+  clearConfigFromStorage,
+  DEFAULT_CONFIG
 } from './utils';
 
 function App() {
-  const [config, setConfig] = useState<MockConfig>(DEFAULT_CONFIG);
+  const [config, setConfig] = useState<KeycloakConfig>(DEFAULT_CONFIG);
   const [tokens, setTokens] = useState<TokenInfo | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -23,14 +25,16 @@ function App() {
   useEffect(() => {
     const savedConfig = getInitialConfig();
     setConfig(savedConfig);
+    setDisableSilentSSO(savedConfig.disableSilentSSO || false);
   }, []);
 
   // Sauvegarder automatiquement la configuration quand elle change
   useEffect(() => {
     if (config.url || config.realm || config.clientId) {
-      saveConfigToStorage(config);
+      const configToSave = { ...config, disableSilentSSO };
+      saveConfigToStorage(configToSave);
     }
-  }, [config]);
+  }, [config, disableSilentSSO]);
 
   // Timer pour mettre à jour les compteurs d'expiration toutes les secondes
   useEffect(() => {
@@ -43,6 +47,10 @@ function App() {
     }
   }, [tokens]);
 
+  const handleDisableSilentSSOChange = (checked: boolean) => {
+    setDisableSilentSSO(checked);
+  };
+
   const clearSavedConfig = () => {
     setConfig(DEFAULT_CONFIG);
     clearConfigFromStorage();
@@ -54,7 +62,7 @@ function App() {
     setError(null);
     
     try {
-      const tokenData = await simulateConnection(config);
+      const tokenData = await connectToKeycloak(config, disableSilentSSO);
       setTokens(tokenData);
       setIsConnected(true);
     } catch (err) {
@@ -64,16 +72,26 @@ function App() {
     }
   };
 
-  const handleDisconnect = () => {
-    setTokens(null);
-    setIsConnected(false);
-    setError(null);
+  const handleDisconnect = async () => {
+    try {
+      await disconnectFromKeycloak();
+    } catch (err) {
+      console.warn('Erreur lors de la déconnexion:', err);
+    } finally {
+      setTokens(null);
+      setIsConnected(false);
+      setError(null);
+    }
   };
 
-  const handleRefreshToken = () => {
+  const handleRefreshToken = async () => {
     if (tokens) {
-      const refreshedTokens = simulateTokenRefresh(tokens);
-      setTokens(refreshedTokens);
+      try {
+        const refreshedTokens = await refreshKeycloakToken();
+        setTokens(refreshedTokens);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Erreur lors du rafraîchissement');
+      }
     }
   };
 
@@ -161,7 +179,7 @@ function App() {
               <input
                 type="checkbox"
                 checked={disableSilentSSO}
-                onChange={(e) => setDisableSilentSSO(e.target.checked)}
+                onChange={(e) => handleDisableSilentSSOChange(e.target.checked)}
                 className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
                 disabled={isConnected}
               />
