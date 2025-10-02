@@ -1,103 +1,103 @@
-import type { KeycloakConfig, TokenInfo, ParsedToken } from '../types';
+import type { KeycloakConfig, TokenInfo, ParsedToken, KeycloakInitOptions, KeycloakInstanceType } from '../types';
 
-// Service Keycloak réel
+// Keycloak service
 class KeycloakService {
-  private keycloak: any = null;
+  private keycloak: KeycloakInstanceType | null = null;
 
-  // Initialiser Keycloak
+  // Initialize Keycloak
   async initKeycloak(config: KeycloakConfig, disableSilentSSO: boolean = false): Promise<void> {
     try {
-      // Import dynamique de keycloak-js
+      // Dynamic import of keycloak-js
       const Keycloak = (await import('keycloak-js')).default;
-      
+
       this.keycloak = new Keycloak({
         url: config.url,
         realm: config.realm,
         clientId: config.clientId,
-      });
+      }) as KeycloakInstanceType;
 
-      const initOptions: any = {
-        pkceMethod: 'S256'
+      const initOptions: KeycloakInitOptions = {
+        pkceMethod: 'S256',
       };
 
       if (disableSilentSSO) {
-        // Pas de SSO silencieux - vérifier d'abord sans redirection
+        // No silent SSO - check first without redirection
         initOptions.onLoad = 'check-sso';
       } else {
-        // SSO silencieux activé
+        // Silent SSO enabled
         initOptions.onLoad = 'check-sso';
         initOptions.silentCheckSsoRedirectUri = window.location.origin + '/silent-check-sso.html';
       }
 
       const authenticated = await this.keycloak.init(initOptions);
-      
-      // Si pas authentifié et qu'on a des paramètres de retour de connexion dans l'URL
+
+      // If not authenticated and we have login return parameters in the URL
       if (!authenticated && (window.location.search.includes('state=') || window.location.hash.includes('state='))) {
-        // Il y a eu une tentative de connexion, nettoyer l'URL
+        // There was a login attempt, clean the URL
         window.history.replaceState({}, document.title, window.location.pathname);
       }
     } catch (error) {
-      console.error('Erreur Keycloak:', error);
-      throw new Error(`Erreur d'initialisation Keycloak: ${error}`);
+      console.error('Keycloak error:', error);
+      throw new Error(`Keycloak initialization error: ${error}`);
     }
   }
 
-  // Connexion
+  // Login
   async login(): Promise<void> {
     if (!this.keycloak) {
-      throw new Error('Keycloak non initialisé');
+      throw new Error('Keycloak not initialized');
     }
-    
+
     return this.keycloak.login({
-      redirectUri: window.location.origin
+      redirectUri: window.location.origin,
     });
   }
 
-  // Déconnexion
+  // Logout
   async logout(): Promise<void> {
     if (!this.keycloak) {
-      throw new Error('Keycloak non initialisé');
+      throw new Error('Keycloak not initialized');
     }
-    
+
     return this.keycloak.logout({
-      redirectUri: window.location.origin
+      redirectUri: window.location.origin,
     });
   }
 
-  // Rafraîchir le token
+  // Refresh token
   async refreshToken(): Promise<{ refreshed: boolean; message: string }> {
     if (!this.keycloak) {
-      throw new Error('Keycloak non initialisé');
+      throw new Error('Keycloak not initialized');
     }
-    
+
     if (!this.keycloak.authenticated) {
-      throw new Error('Utilisateur non authentifié');
+      throw new Error('User not authenticated');
     }
 
     try {
-      console.log('Tentative de rafraîchissement du token...');
-      // updateToken retourne true si le token a été rafraîchi, false s'il est encore valide
-      const refreshed = await this.keycloak.updateToken(5); // Forcer le rafraîchissement même si valide encore 5 secondes
-      
+      console.log('Attempting token refresh...');
+      // updateToken returns true if token was refreshed, false if still valid
+      const refreshed = await this.keycloak.updateToken(5); // Force refresh even if valid for 5 more seconds
+
       if (refreshed) {
-        console.log('Token rafraîchi avec succès');
-        return { refreshed: true, message: 'Tokens rafraîchis avec succès' };
+        console.log('Token refreshed successfully');
+        return { refreshed: true, message: 'Tokens refreshed successfully' };
       } else {
-        console.log('Tokens encore valides, aucun rafraîchissement nécessaire');
-        return { refreshed: false, message: 'Tokens encore valides, aucun rafraîchissement nécessaire' };
+        console.log('Tokens still valid, no refresh needed');
+        return { refreshed: false, message: 'Tokens still valid, no refresh needed' };
       }
     } catch (error) {
-      console.error('Erreur updateToken:', error);
-      throw new Error(`Erreur lors du rafraîchissement du token: ${error}`);
+      console.error('updateToken error:', error);
+      throw new Error(`Error refreshing token: ${error}`);
     }
   }
 
-  // Vérifier si l'utilisateur est authentifié
+  // Check if user is authenticated
   isAuthenticated(): boolean {
     return this.keycloak?.authenticated || false;
   }
 
-  // Obtenir les informations des tokens
+  // Get token information
   getTokenInfo(): TokenInfo | null {
     if (!this.keycloak || !this.keycloak.authenticated) {
       return null;
@@ -107,12 +107,12 @@ class KeycloakService {
       accessToken: this.keycloak.token || '',
       refreshToken: this.keycloak.refreshToken || '',
       idToken: this.keycloak.idToken || '',
-      tokenParsed: this.keycloak.tokenParsed || {} as ParsedToken,
-      idTokenParsed: this.keycloak.idTokenParsed || {} as ParsedToken
+      tokenParsed: this.keycloak.tokenParsed || ({} as ParsedToken),
+      idTokenParsed: this.keycloak.idTokenParsed || ({} as ParsedToken),
     };
   }
 
-  // Obtenir les rôles de l'utilisateur
+  // Get user roles
   getUserRoles(): string[] {
     if (!this.keycloak?.tokenParsed?.realm_access?.roles) {
       return [];
@@ -120,12 +120,12 @@ class KeycloakService {
     return this.keycloak.tokenParsed.realm_access.roles;
   }
 
-  // Vérifier si l'utilisateur a un rôle spécifique
+  // Check if user has a specific role
   hasRole(role: string): boolean {
     return this.getUserRoles().includes(role);
   }
 
-  // Nettoyer l'instance
+  // Clean up instance
   clearKeycloak(): void {
     if (this.keycloak) {
       this.keycloak.clearToken();
@@ -134,5 +134,5 @@ class KeycloakService {
   }
 }
 
-// Instance singleton
+// Singleton instance
 export const keycloakService = new KeycloakService();
